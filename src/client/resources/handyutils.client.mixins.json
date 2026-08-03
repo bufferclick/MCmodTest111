@@ -1,0 +1,16 @@
+{
+  "required": true,
+  "minVersion": "0.8",
+  "package": "com.bufferclick.handyutils.mixin",
+  "compatibilityLevel": "JAVA_21",
+  "refmap": "handyutils.client.refmap.json",
+  "mixins": [],
+  "client": [
+    "GameRendererMixin",
+    "AbstractContainerScreenMixin",
+    "LightTextureMixin"
+  ],
+  "injectors": {
+    "defaultRequire": 1
+  }
+}

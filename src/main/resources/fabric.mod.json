@@ -1,0 +1,37 @@
+{
+  "schemaVersion": 1,
+  "id": "handyutils",
+  "version": "${version}",
+  "name": "HandyUtils",
+  "description": "A truly useful client-side toolkit: Smooth Zoom, Fullbright, Info HUD, Armor HUD, Shulker Preview, Inventory Sorting, Death Tracker and more. All client-only, works on any server.",
+  "authors": ["bufferclick"],
+  "contact": {
+    "homepage": "https://github.com/bufferclick/MCmodTest111",
+    "sources": "https://github.com/bufferclick/MCmodTest111",
+    "issues": "https://github.com/bufferclick/MCmodTest111/issues"
+  },
+  "license": "MIT",
+  "icon": "assets/handyutils/icon.png",
+  "environment": "client",
+  "entrypoints": {
+    "main": [
+      "com.bufferclick.handyutils.HandyUtilsMod"
+    ],
+    "client": [
+      "com.bufferclick.handyutils.client.HandyUtilsClient"
+    ]
+  },
+  "mixins": [
+    "handyutils.mixins.json",
+    {
+      "config": "handyutils.client.mixins.json",
+      "environment": "client"
+    }
+  ],
+  "depends": {
+    "fabricloader": ">=0.19.0",
+    "minecraft": "~1.21.11",
+    "java": ">=21",
+    "fabric-api": "*"
+  }
+}

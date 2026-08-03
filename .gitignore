@@ -1,0 +1,13 @@
+.gradle
+build/
+out/
+remappedSrc/
+*.lock
+run/
+logs/
+.fabric/
+config/handyutils.json
+.idea/
+*.iml
+/mods/
+fabric.mod.json.bak
