@@ -18,8 +18,8 @@ continuously, until you turn it off.
 - **Configuration menu** — open it with **Crouch + G** (rebindable).
 - **Activation** — **Sneak + L** by default (rebindable). Can be switched to
   key-only mode in the menu.
-- **Block selection** — a vanilla-styled, searchable, scrollable grid of every
-  obtainable block in the current game registry, with icons and a green
+- **Block selection** — a vanilla-styled, searchable, page-scrollable grid of
+  every obtainable block in the current game registry, with icons and a green
   outline on the currently selected block.
 - **Efficient pathfinding** — a budgeted A* search that prefers a clear
   no-mining route and only digs when a route requires it, favoring cheap
@@ -37,7 +37,9 @@ continuously, until you turn it off.
 
 1. Install [Fabric Loader](https://fabricmc.net/use/) for Minecraft 1.21.11.
 2. Install [Fabric API](https://modrinth.com/mod/fabric-api) for 1.21.11.
-3. Drop `karnmining-1.0.0.jar` into your `mods` folder.
+3. Drop `KarnMining-1.0.0.jar` (included in this repository, and attached to
+   every [GitHub Actions](https://github.com/bufferclick/MCmodTest111/actions)
+   build) into your `mods` folder.
 
 ## Usage
 
@@ -88,7 +90,9 @@ The distributable jar is written to `build/libs/`.
 The repository ships a `.github/workflows/build.yml` that:
 
 - builds the jar on every push / pull request and uploads it as an
-  **artifact** (Actions → workflow run → *Upload build artifacts*), and
+  **artifact** (Actions → workflow run → *Upload build artifacts*),
+- pushes the freshly built jar to the **`dist`** branch so it can be fetched
+  with a plain `git fetch origin dist`, and
 - publishes a **GitHub Release** with the jar attached whenever a tag like
   `v1.0.0` is pushed:
 
