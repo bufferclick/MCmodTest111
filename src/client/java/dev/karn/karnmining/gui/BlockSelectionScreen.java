@@ -4,17 +4,14 @@ import dev.karn.karnmining.KarnMiningClient;
 import net.minecraft.block.Block;
 import net.minecraft.client.gui.DrawContext;
 import net.minecraft.client.gui.screen.Screen;
-import net.minecraft.client.gui.tooltip.Tooltip;
 import net.minecraft.client.gui.widget.ButtonWidget;
 import net.minecraft.client.gui.widget.TextFieldWidget;
 import net.minecraft.item.ItemStack;
 import net.minecraft.item.Items;
 import net.minecraft.registry.Registries;
-import net.minecraft.text.MutableText;
 import net.minecraft.text.Text;
 import net.minecraft.util.Formatting;
 import net.minecraft.util.Identifier;
-import org.lwjgl.glfw.GLFW;
 
 import java.util.ArrayList;
 import java.util.Comparator;
@@ -23,7 +20,7 @@ import java.util.Locale;
 import java.util.Optional;
 
 /**
- * Searchable, scrollable grid of every obtainable block in the registry,
+ * Searchable, page-scrollable grid of every obtainable block in the registry,
  * styled like the vanilla creative inventory. The list is generated from
  * {@link Registries#BLOCK} at runtime, so it always matches the current game.
  */
@@ -37,14 +34,16 @@ public final class BlockSelectionScreen extends Screen {
     private final List<BlockCell> cells = new ArrayList<>();
     private List<Block> filteredBlocks;
     private TextFieldWidget searchField;
+    private ButtonWidget previousButton;
+    private ButtonWidget pageButton;
+    private ButtonWidget nextButton;
     private String query = "";
-    private int scrollRows;
+    private int page;
     private int columns;
-    private int rowsVisible;
-    private int listTop;
-    private int listBottom;
-    private int listLeft;
-    private int listWidth;
+    private int rows;
+    private int gridLeft;
+    private int gridTop;
+    private int gridWidth;
 
     public BlockSelectionScreen(Screen parent) {
         super(Text.literal("Choose a Block"));
@@ -61,22 +60,45 @@ public final class BlockSelectionScreen extends Screen {
     @Override
     protected void init() {
         int contentWidth = Math.min(440, width - 24);
-        listLeft = (width - contentWidth) / 2;
-        listWidth = contentWidth;
-        listTop = 58;
-        listBottom = height - 44;
-        columns = Math.max(1, listWidth / CELL);
-        rowsVisible = Math.max(1, (listBottom - listTop) / CELL);
+        gridLeft = (width - contentWidth) / 2;
+        gridWidth = contentWidth;
+        gridTop = 58;
+        rows = Math.max(3, Math.min(10, (height - 120) / CELL));
+        columns = Math.max(1, gridWidth / CELL);
 
-        searchField = new TextFieldWidget(textRenderer, listLeft, 28, listWidth - 76, 20, Text.literal("Search blocks"));
+        searchField = new TextFieldWidget(textRenderer, gridLeft, 28, gridWidth - 76, 20, Text.literal("Search blocks"));
         searchField.setMaxLength(80);
         searchField.setText(query);
-        searchField.setChangedListener(text -> applySearch(false));
+        searchField.setChangedListener(text -> applySearch());
         addDrawableChild(searchField);
 
-        addDrawableChild(ButtonWidget.builder(Text.literal("Search"), button -> applySearch(true))
-            .dimensions(listLeft + listWidth - 72, 28, 72, 20)
+        addDrawableChild(ButtonWidget.builder(Text.literal("Search"), button -> applySearch())
+            .dimensions(gridLeft + gridWidth - 72, 28, 72, 20)
             .build());
+
+        int navigationY = gridTop + rows * CELL + 6;
+
+        previousButton = ButtonWidget.builder(Text.literal("<"), button -> {
+                page--;
+                layout();
+            })
+            .dimensions(width / 2 - 104, navigationY, 40, 20)
+            .build();
+        addDrawableChild(previousButton);
+
+        pageButton = ButtonWidget.builder(Text.literal("Page 1 / 1"), button -> { })
+            .dimensions(width / 2 - 60, navigationY, 120, 20)
+            .build();
+        pageButton.active = false;
+        addDrawableChild(pageButton);
+
+        nextButton = ButtonWidget.builder(Text.literal(">"), button -> {
+                page++;
+                layout();
+            })
+            .dimensions(width / 2 + 64, navigationY, 40, 20)
+            .build();
+        addDrawableChild(nextButton);
 
         addDrawableChild(ButtonWidget.builder(Text.literal("Back"), button -> close())
             .dimensions(width / 2 - 50, height - 26, 100, 20)
@@ -90,26 +112,8 @@ public final class BlockSelectionScreen extends Screen {
             addDrawableChild(cell);
         }
 
+        page = 0;
         layout();
-    }
-
-    @Override
-    public boolean mouseScrolled(double mouseX, double mouseY, double horizontalAmount, double verticalAmount) {
-        if (mouseY >= listTop && mouseY <= listBottom && mouseX >= listLeft && mouseX <= listLeft + listWidth) {
-            scrollRows -= (int) Math.round(verticalAmount * 2.0);
-            layout();
-            return true;
-        }
-        return super.mouseScrolled(mouseX, mouseY, horizontalAmount, verticalAmount);
-    }
-
-    @Override
-    public boolean keyPressed(int keyCode, int scanCode, int modifiers) {
-        if (searchField.isFocused() && (keyCode == GLFW.GLFW_KEY_ENTER || keyCode == GLFW.GLFW_KEY_KP_ENTER)) {
-            applySearch(true);
-            return true;
-        }
-        return super.keyPressed(keyCode, scanCode, modifiers);
     }
 
     @Override
@@ -117,31 +121,23 @@ public final class BlockSelectionScreen extends Screen {
         renderBackground(context, mouseX, mouseY, deltaTicks);
         context.drawCenteredTextWithShadow(textRenderer, title, width / 2, 12, 0xFFFFFF);
 
-        MutableText info = Text.literal(filteredBlocks.size() + " / " + allBlocks.size() + " blocks");
+        Text info = Text.literal(filteredBlocks.size() + " / " + allBlocks.size() + " blocks");
         Optional<Block> selected = KarnMiningClient.config().getSelectedBlock();
         if (selected.isPresent()) {
-            info.append("   -   Selected: ").append(selected.get().getName().formatted(Formatting.GREEN));
+            info = Text.literal("").append(info).append("  -  Selected: ")
+                .append(selected.get().getName().formatted(Formatting.GREEN));
         }
         context.drawCenteredTextWithShadow(textRenderer, info, width / 2, height - 40, 0xA0A0A0);
 
-        drawScrollbar(context);
+        Block hovered = hoveredBlock(mouseX, mouseY);
+        if (hovered != null) {
+            context.drawCenteredTextWithShadow(textRenderer,
+                Text.literal(hovered.getName().getString() + "  (")
+                    .append(Registries.BLOCK.getId(hovered).toString()).append(")"),
+                width / 2, gridTop - 12, 0xFFFFFF);
+        }
 
         super.render(context, mouseX, mouseY, deltaTicks);
-    }
-
-    private void drawScrollbar(DrawContext context) {
-        int totalRows = Math.max(1, (filteredBlocks.size() + columns - 1) / columns);
-        int maxScroll = totalRows - rowsVisible;
-        if (maxScroll <= 0) {
-            return;
-        }
-        int barRight = listLeft + listWidth - 2;
-        int barLeft = barRight - 5;
-        context.fill(barLeft, listTop, barRight, listBottom, 0xFF202020);
-        int track = listBottom - listTop;
-        int handleHeight = Math.max(18, track * rowsVisible / totalRows);
-        int handleY = listTop + (track - handleHeight) * scrollRows / maxScroll;
-        context.fill(barLeft, handleY, barRight, handleY + handleHeight, 0xFFCCCCCC);
     }
 
     private void select(Block block) {
@@ -150,18 +146,15 @@ public final class BlockSelectionScreen extends Screen {
         client.setScreen(parent);
     }
 
-    private void applySearch(boolean refocus) {
+    private void applySearch() {
         query = searchField.getText().trim();
         String normalized = query.toLowerCase(Locale.ROOT);
         String underscored = normalized.replace(' ', '_');
         filteredBlocks = normalized.isEmpty() ? allBlocks : allBlocks.stream()
             .filter(block -> matches(block, normalized, underscored))
             .toList();
-        scrollRows = 0;
+        page = 0;
         layout();
-        if (refocus) {
-            setInitialFocus(searchField);
-        }
     }
 
     private static boolean matches(Block block, String query, String underscored) {
@@ -174,24 +167,24 @@ public final class BlockSelectionScreen extends Screen {
             || name.contains(underscored.replace('_', ' '));
     }
 
-    /** Positions every cell for the current query and scroll offset. */
+    /** Positions every cell for the current search results and page. */
     private void layout() {
-        int totalRows = Math.max(1, (filteredBlocks.size() + columns - 1) / columns);
-        int maxScroll = Math.max(0, totalRows - rowsVisible);
-        scrollRows = Math.max(0, Math.min(scrollRows, maxScroll));
+        int perPage = rows * columns;
+        int pageCount = Math.max(1, (filteredBlocks.size() + perPage - 1) / perPage);
+        page = Math.max(0, Math.min(page, pageCount - 1));
+        int start = page * perPage;
+        int end = Math.min(filteredBlocks.size(), start + perPage);
         Block configured = KarnMiningClient.config().getSelectedBlock().orElse(null);
 
         for (BlockCell cell : cells) {
             int index = cell.index;
-            boolean visible = index < filteredBlocks.size();
+            boolean visible = index >= start && index < end;
             if (visible) {
-                int column = index % columns;
-                int row = index / columns - scrollRows;
-                visible = row >= 0 && row < rowsVisible;
-                if (visible) {
-                    cell.setX(listLeft + 2 + column * CELL);
-                    cell.setY(listTop + 2 + row * CELL);
-                }
+                int position = index - start;
+                int column = position % columns;
+                int row = position / columns;
+                cell.setX(gridLeft + 2 + column * CELL);
+                cell.setY(gridTop + 2 + row * CELL);
             }
             cell.visible = visible;
             cell.selected = visible && filteredBlocks.get(index) == configured;
@@ -199,6 +192,19 @@ public final class BlockSelectionScreen extends Screen {
                 cell.setY(-10_000); // keep it out of hit-testing
             }
         }
+
+        previousButton.active = page > 0;
+        nextButton.active = page + 1 < pageCount;
+        pageButton.setMessage(Text.literal("Page " + (page + 1) + " / " + pageCount));
+    }
+
+    private Block hoveredBlock(int mouseX, int mouseY) {
+        for (BlockCell cell : cells) {
+            if (cell.visible && cell.isMouseOver(mouseX, mouseY)) {
+                return cell.block;
+            }
+        }
+        return null;
     }
 
     @Override
@@ -208,7 +214,8 @@ public final class BlockSelectionScreen extends Screen {
 
     /**
      * A vanilla button showing the block's item icon; the configured block is
-     * outlined in green.
+     * outlined in green. The icon is drawn through {@link #drawIcon}, the
+     * content hook the game calls for pressable widgets.
      */
     private static final class BlockCell extends ButtonWidget {
         private final int index;
@@ -217,17 +224,14 @@ public final class BlockSelectionScreen extends Screen {
         private boolean selected;
 
         private BlockCell(int index, Block block, PressAction onPress) {
-            super(0, -10_000, CELL_SIZE, CELL_SIZE, Text.empty(), onPress, DEFAULT_NARRATION_SUPPLIER);
+            super(0, -10_000, CELL_SIZE, CELL_SIZE, Text.literal(""), onPress, DEFAULT_NARRATION_SUPPLIER);
             this.index = index;
             this.block = block;
             this.stack = block.asItem().getDefaultStack();
-            setTooltip(Tooltip.of(Text.literal(block.getName().getString() + "\n" + Registries.BLOCK.getId(block))
-                .formatted(Formatting.GRAY)));
         }
 
         @Override
-        protected void renderWidget(DrawContext context, int mouseX, int mouseY, float deltaTicks) {
-            super.renderWidget(context, mouseX, mouseY, deltaTicks);
+        public void drawIcon(DrawContext context, int mouseX, int mouseY, float deltaTicks) {
             context.drawItem(stack, getX() + 1, getY() + 1);
             if (selected) {
                 int x = getX();
