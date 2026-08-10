@@ -3,7 +3,7 @@
   "id": "karnmining",
   "version": "${version}",
   "name": "KarnMining",
-  "description": "Choose any block and KarnMining will find, path to, and mine the nearest match. Warning: automation may get you banned from servers.",
+  "description": "KarnMining automatically finds the nearest block of your chosen type, navigates to it, mines it with the tool in your hand, then immediately searches for the next one. WARNING: Using KarnMining on multiplayer servers may violate server rules and can result in a ban.",
   "authors": [
     "Kärn"
   ],
@@ -13,16 +13,12 @@
   "entrypoints": {
     "client": [
       "dev.karn.karnmining.KarnMiningClient"
-    ],
-    "modmenu": [
-      "dev.karn.karnmining.integration.KarnMiningModMenu"
     ]
   },
   "depends": {
     "fabricloader": ">=0.19.3",
     "fabric-api": "*",
     "minecraft": "~1.21.11",
-    "java": ">=21",
-    "modmenu": ">=17.0.0"
+    "java": ">=21"
   }
 }

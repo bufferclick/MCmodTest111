@@ -10,6 +10,10 @@ import java.util.Set;
 /**
  * Incremental nearest-block scan. Offsets are sorted by squared distance, so
  * the first matching loaded block is guaranteed to be the nearest in range.
+ *
+ * <p>The scan is spread over multiple client ticks (see the budget in
+ * {@link AutomationController}) so a full 48-block sphere never stalls a
+ * frame. The offset table is cached and reused between scans.
  */
 final class BlockScanner {
     private static int cachedRadius = -1;

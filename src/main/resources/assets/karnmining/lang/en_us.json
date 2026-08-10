@@ -1,4 +1,5 @@
 {
-  "key.karnmining.toggle": "Toggle KarnMining",
+  "key.karnmining.activation": "Toggle KarnMining",
+  "key.karnmining.config": "Open KarnMining Menu",
   "key.category.karnmining.main": "KarnMining"
 }

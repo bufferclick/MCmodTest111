@@ -6,9 +6,11 @@ import net.minecraft.block.BlockState;
 import net.minecraft.client.MinecraftClient;
 import net.minecraft.client.network.ClientPlayerEntity;
 import net.minecraft.client.world.ClientWorld;
+import net.minecraft.network.packet.c2s.play.PlayerMoveC2SPacket;
 import net.minecraft.text.Text;
 import net.minecraft.util.Hand;
 import net.minecraft.util.math.BlockPos;
+import net.minecraft.util.math.Direction;
 import net.minecraft.util.math.Vec3d;
 
 import java.util.HashSet;
@@ -16,10 +18,19 @@ import java.util.List;
 import java.util.Optional;
 import java.util.Set;
 
-/** Coordinates scanning, pathfinding, movement, and vanilla block breaking. */
+/**
+ * Coordinates scanning, pathfinding, movement, and vanilla block breaking.
+ *
+ * <p>The loop is: find the nearest block of the selected type, plan a route
+ * (no-mining first, mining only when necessary), walk there, mine it, then
+ * immediately search for the next one. Everything is budgeted per tick so the
+ * mod stays lightweight, and it only ever uses the tool the player is holding.
+ */
 public final class AutomationController {
     private static final int SCAN_BUDGET_PER_TICK = 12_000;
     private static final int PATH_BUDGET_PER_TICK = 900;
+    private static final int REPLAN_INTERVAL = 80;   // ticks between route rechecks while walking
+    private static final int MAX_BREAK_TICKS = 1_200;
 
     private final KarnMiningConfig config;
     private final Set<Long> ignoredTargets = new HashSet<>();
@@ -40,6 +51,7 @@ public final class AutomationController {
     private int ticks;
     private int stuckTicks;
     private double bestStepDistance = Double.MAX_VALUE;
+    private int replanTimer;
     private String status = "Disabled";
 
     public AutomationController(KarnMiningConfig config) {
@@ -50,6 +62,10 @@ public final class AutomationController {
         return enabled;
     }
 
+    /**
+     * Flips the enabled state. Returns false (and notifies the player) when
+     * trying to enable without a selected block.
+     */
     public boolean toggle(MinecraftClient client) {
         if (!enabled && config.getSelectedBlock().isEmpty()) {
             if (client.player != null) {
@@ -82,6 +98,12 @@ public final class AutomationController {
         if (client.player == null || client.world == null || client.interactionManager == null) {
             enabled = false;
             stop(client, "Disabled");
+            return;
+        }
+
+        if (client.player.isSpectator() || !client.player.isAlive()) {
+            releaseMovement(client);
+            status = "Paused (spectator or dead)";
             return;
         }
 
@@ -152,7 +174,7 @@ public final class AutomationController {
         if (target == null) {
             if (!ignoredTargets.isEmpty()) {
                 ignoredTargets.clear();
-                status = "No other reachable match; retrying all targets...";
+                status = "No reachable match; retrying all targets...";
                 waitTicks = 80;
             } else {
                 status = "No match within " + config.getSearchRadius() + " blocks; retrying...";
@@ -188,7 +210,8 @@ public final class AutomationController {
         pathIndex = path.size() > 1 ? 1 : path.size();
         stuckTicks = 0;
         bestStepDistance = Double.MAX_VALUE;
-        status = pathUsesMining ? "Following mining route..." : "Sprinting to target...";
+        replanTimer = REPLAN_INTERVAL;
+        status = pathUsesMining ? "Following mining route..." : "Moving to target...";
     }
 
     private void tickMovement(MinecraftClient client) {
@@ -211,6 +234,15 @@ public final class AutomationController {
             return;
         }
 
+        replanTimer--;
+        if (replanTimer <= 0) {
+            replanTimer = REPLAN_INTERVAL;
+            replan(client);
+            if (!enabled || path == null) {
+                return;
+            }
+        }
+
         BlockPos obstruction = firstObstruction(client, next);
         if (obstruction != null) {
             releaseMovement(client);
@@ -228,14 +260,40 @@ public final class AutomationController {
         }
 
         clearBreaking(client);
-        lookAt(player, next.getX() + 0.5, player.getEyeY(), next.getZ() + 0.5);
+        lookAt(client, next.getX() + 0.5, player.getEyeY(), next.getZ() + 0.5);
         client.options.forwardKey.setPressed(true);
         client.options.sprintKey.setPressed(true);
         client.options.jumpKey.setPressed(dy > 0.35 || player.horizontalCollision);
         player.setSprinting(true);
         controllingMovement = true;
-        status = pathUsesMining ? "Following mining route..." : "Sprinting to target...";
+        status = pathUsesMining ? "Following mining route..." : "Moving to target...";
         watchForStall(client, distance);
+    }
+
+    /**
+     * Re-checks the route against the current world state. Adopts a new path
+     * if a better one exists, or abandons the target when it is unreachable.
+     */
+    private void replan(MinecraftClient client) {
+        if (target == null || !client.world.getBlockState(target).isOf(selectedBlock)) {
+            finishTarget(client);
+            return;
+        }
+        PathfinderJob quick = new PathfinderJob(client.world, client.player, client.player.getBlockPos(), target);
+        quick.step(PATH_BUDGET_PER_TICK * 6);
+        if (!quick.isDone()) {
+            return; // keep the current path; retry later
+        }
+        if (quick.hasFailed() || quick.getResult() == null) {
+            skipTarget(client, "Route became blocked; trying another target...");
+            return;
+        }
+        PathfinderJob.PathResult result = quick.getResult();
+        path = result.positions();
+        pathUsesMining = result.usesMining();
+        pathIndex = Math.min(path.size() - 1, 1);
+        stuckTicks = 0;
+        bestStepDistance = Double.MAX_VALUE;
     }
 
     private void tickTargetMining(MinecraftClient client) {
@@ -249,19 +307,25 @@ public final class AutomationController {
         } else if (result == MiningResult.OUT_OF_REACH) {
             path = null;
             pathfinder = new PathfinderJob(client.world, client.player, client.player.getBlockPos(), target);
-            status = "Target moved out of reach; replanning...";
+            status = "Target out of reach; replanning...";
         }
     }
 
+    /**
+     * Breaks {@code position} using the vanilla interaction manager. Returns
+     * COMPLETE when the block is gone, UNBREAKABLE for fluid/unbreakable
+     * blocks, OUT_OF_REACH when the player is too far, or IN_PROGRESS while
+     * the block is being destroyed.
+     */
     private MiningResult mineBlock(MinecraftClient client, BlockPos position, boolean targetBlock) {
-        BlockState state = client.world.getBlockState(position);
+        ClientWorld world = client.world;
+        BlockState state = world.getBlockState(position);
         if (targetBlock ? !state.isOf(selectedBlock)
-            : state.getCollisionShape(client.world, position).isEmpty() && state.getFluidState().isEmpty()) {
+            : state.getCollisionShape(world, position).isEmpty() && state.getFluidState().isEmpty()) {
             clearBreaking(client);
             return MiningResult.COMPLETE;
         }
-        if ((targetBlock && state.isAir()) || !state.getFluidState().isEmpty()
-            || state.getHardness(client.world, position) < 0.0F) {
+        if (!state.getFluidState().isEmpty() || state.getHardness(world, position) < 0.0F) {
             clearBreaking(client);
             return MiningResult.UNBREAKABLE;
         }
@@ -274,18 +338,19 @@ public final class AutomationController {
             return MiningResult.OUT_OF_REACH;
         }
 
-        lookAt(client.player, centerX, centerY, centerZ);
+        lookAt(client, centerX, centerY, centerZ);
+        Direction face = faceToward(eyes, position);
         if (!position.equals(breakingPosition)) {
             clearBreaking(client);
             breakingPosition = position.toImmutable();
-            client.interactionManager.attackBlock(position, net.minecraft.util.math.Direction.UP);
+            client.interactionManager.attackBlock(position, face);
         }
         breakingTicks++;
-        if (breakingTicks > 1_200) {
+        if (breakingTicks > MAX_BREAK_TICKS) {
             clearBreaking(client);
             return MiningResult.UNBREAKABLE;
         }
-        client.interactionManager.updateBlockBreakingProgress(position, net.minecraft.util.math.Direction.UP);
+        client.interactionManager.updateBlockBreakingProgress(position, face);
         if ((ticks & 3) == 0) {
             client.player.swingHand(Hand.MAIN_HAND);
         }
@@ -390,6 +455,7 @@ public final class AutomationController {
         stuckTicks = 0;
         ignoredTargets.clear();
         bestStepDistance = Double.MAX_VALUE;
+        replanTimer = REPLAN_INTERVAL;
         status = newStatus;
     }
 
@@ -425,7 +491,15 @@ public final class AutomationController {
         controllingMovement = false;
     }
 
-    private static void lookAt(ClientPlayerEntity player, double x, double y, double z) {
+    /**
+     * Turns the player toward the given point and mirrors the look change to
+     * the server so block breaking works correctly in multiplayer.
+     */
+    private void lookAt(MinecraftClient client, double x, double y, double z) {
+        ClientPlayerEntity player = client.player;
+        if (player == null) {
+            return;
+        }
         double dx = x - player.getX();
         double dy = y - player.getEyeY();
         double dz = z - player.getZ();
@@ -434,6 +508,27 @@ public final class AutomationController {
         float pitch = (float) -Math.toDegrees(Math.atan2(dy, horizontal));
         player.setYaw(yaw);
         player.setPitch(Math.max(-90.0F, Math.min(90.0F, pitch)));
+        if (client.getNetworkHandler() != null) {
+            client.getNetworkHandler().sendPacket(new PlayerMoveC2SPacket.LookAndOnGround(
+                yaw, pitch, player.isOnGround(), player.horizontalCollision));
+        }
+    }
+
+    /** Chooses the face of the block closest to the player's eyes. */
+    private static Direction faceToward(Vec3d eyes, BlockPos position) {
+        double dx = position.getX() + 0.5 - eyes.x;
+        double dy = position.getY() + 0.5 - eyes.y;
+        double dz = position.getZ() + 0.5 - eyes.z;
+        double ax = Math.abs(dx);
+        double ay = Math.abs(dy);
+        double az = Math.abs(dz);
+        if (ax >= ay && ax >= az) {
+            return dx > 0 ? Direction.EAST : Direction.WEST;
+        }
+        if (ay >= az) {
+            return dy > 0 ? Direction.DOWN : Direction.UP;
+        }
+        return dz > 0 ? Direction.SOUTH : Direction.NORTH;
     }
 
     private enum MiningResult {

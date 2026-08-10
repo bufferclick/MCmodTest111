@@ -10,13 +10,6 @@ base {
     archivesName = project.archives_base_name
 }
 
-repositories {
-    maven {
-        name = 'TerraformersMC'
-        url = 'https://maven.terraformersmc.com/releases/'
-    }
-}
-
 loom {
     splitEnvironmentSourceSets()
 
@@ -29,11 +22,14 @@ loom {
 }
 
 dependencies {
+    // To change the versions see the gradle.properties file
     minecraft "com.mojang:minecraft:${project.minecraft_version}"
     mappings "net.fabricmc:yarn:${project.yarn_mappings}:v2"
     modImplementation "net.fabricmc:fabric-loader:${project.loader_version}"
+
+    // Fabric API. KarnMining only uses the key-binding and lifecycle-event
+    // modules, but depends on the standard bundle for simplicity.
     modImplementation "net.fabricmc.fabric-api:fabric-api:${project.fabric_api_version}"
-    modImplementation "com.terraformersmc:modmenu:${project.modmenu_version}"
 }
 
 processResources {
