@@ -36,14 +36,18 @@ jobs:
         run: chmod +x gradlew
 
       - name: Build with Gradle
-        run: ./gradlew build
+        run: |
+          ./gradlew build --console=plain 2>&1 | tee "$GITHUB_WORKSPACE/build.log"
+          exit "${PIPESTATUS[0]}"
 
       - name: Upload build artifacts
+        if: always()
         uses: actions/upload-artifact@v4
         with:
           name: KarnMining-${{ github.sha }}
           path: |
             build/libs/*.jar
+            build.log
             !build/libs/*-sources.jar
 
       # Push a tag like v1.0.0 to publish a release with the jar attached.
