@@ -26,7 +26,8 @@ import java.util.Optional;
  */
 public final class BlockSelectionScreen extends Screen {
     private static final int CELL = 20;      // grid pitch
-    private static final int CELL_SIZE = 18; // widget size (icon 16 + border)
+    private static final int CELL_SIZE = 18; // cell size (icon 16 + border)
+    private static final Text EMPTY = Text.literal("");
 
     private final Screen parent;
     private final List<Block> allBlocks;
@@ -107,9 +108,11 @@ public final class BlockSelectionScreen extends Screen {
         cells.clear();
         for (int index = 0; index < allBlocks.size(); index++) {
             Block block = allBlocks.get(index);
-            BlockCell cell = new BlockCell(index, block, button -> select(block));
-            cells.add(cell);
-            addDrawableChild(cell);
+            ButtonWidget button = ButtonWidget.builder(EMPTY, pressed -> select(block))
+                .dimensions(0, -10_000, CELL_SIZE, CELL_SIZE)
+                .build();
+            cells.add(new BlockCell(index, block, button));
+            addDrawableChild(button);
         }
 
         page = 0;
@@ -120,6 +123,22 @@ public final class BlockSelectionScreen extends Screen {
     public void render(DrawContext context, int mouseX, int mouseY, float deltaTicks) {
         renderBackground(context, mouseX, mouseY, deltaTicks);
         context.drawCenteredTextWithShadow(textRenderer, title, width / 2, 12, 0xFFFFFF);
+
+        for (BlockCell cell : cells) {
+            if (cell.button.visible) {
+                int x = cell.button.getX();
+                int y = cell.button.getY();
+                context.drawItem(cell.stack, x + 1, y + 1);
+                if (cell.selected) {
+                    int w = cell.button.getWidth();
+                    int h = cell.button.getHeight();
+                    context.fill(x, y, x + w, y + 1, 0xFF55FF55);
+                    context.fill(x, y + h - 1, x + w, y + h, 0xFF55FF55);
+                    context.fill(x, y, x + 1, y + h, 0xFF55FF55);
+                    context.fill(x + w - 1, y, x + w, y + h, 0xFF55FF55);
+                }
+            }
+        }
 
         Text info = Text.literal(filteredBlocks.size() + " / " + allBlocks.size() + " blocks");
         Optional<Block> selected = KarnMiningClient.config().getSelectedBlock();
@@ -183,13 +202,13 @@ public final class BlockSelectionScreen extends Screen {
                 int position = index - start;
                 int column = position % columns;
                 int row = position / columns;
-                cell.setX(gridLeft + 2 + column * CELL);
-                cell.setY(gridTop + 2 + row * CELL);
+                cell.button.setX(gridLeft + 2 + column * CELL);
+                cell.button.setY(gridTop + 2 + row * CELL);
             }
-            cell.visible = visible;
+            cell.button.visible = visible;
             cell.selected = visible && filteredBlocks.get(index) == configured;
             if (!visible) {
-                cell.setY(-10_000); // keep it out of hit-testing
+                cell.button.setY(-10_000); // keep it out of hit-testing
             }
         }
 
@@ -200,7 +219,7 @@ public final class BlockSelectionScreen extends Screen {
 
     private Block hoveredBlock(int mouseX, int mouseY) {
         for (BlockCell cell : cells) {
-            if (cell.visible && cell.isMouseOver(mouseX, mouseY)) {
+            if (cell.button.visible && cell.button.isMouseOver(mouseX, mouseY)) {
                 return cell.block;
             }
         }
@@ -212,37 +231,19 @@ public final class BlockSelectionScreen extends Screen {
         client.setScreen(parent);
     }
 
-    /**
-     * A vanilla button showing the block's item icon; the configured block is
-     * outlined in green. The icon is drawn through {@link #drawIcon}, the
-     * content hook the game calls for pressable widgets.
-     */
-    private static final class BlockCell extends ButtonWidget {
+    /** Data for one grid cell: the block, its item icon, and its button. */
+    private static final class BlockCell {
         private final int index;
         private final Block block;
         private final ItemStack stack;
+        private final ButtonWidget button;
         private boolean selected;
 
-        private BlockCell(int index, Block block, PressAction onPress) {
-            super(0, -10_000, CELL_SIZE, CELL_SIZE, Text.literal(""), onPress, DEFAULT_NARRATION_SUPPLIER);
+        private BlockCell(int index, Block block, ButtonWidget button) {
             this.index = index;
             this.block = block;
             this.stack = block.asItem().getDefaultStack();
-        }
-
-        @Override
-        public void drawIcon(DrawContext context, int mouseX, int mouseY, float deltaTicks) {
-            context.drawItem(stack, getX() + 1, getY() + 1);
-            if (selected) {
-                int x = getX();
-                int y = getY();
-                int w = getWidth();
-                int h = getHeight();
-                context.fill(x, y, x + w, y + 1, 0xFF55FF55);
-                context.fill(x, y + h - 1, x + w, y + h, 0xFF55FF55);
-                context.fill(x, y, x + 1, y + h, 0xFF55FF55);
-                context.fill(x + w - 1, y, x + w, y + h, 0xFF55FF55);
-            }
+            this.button = button;
         }
     }
 }
