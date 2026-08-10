@@ -70,16 +70,19 @@ jobs:
       - name: Push jar to dist branch
         if: success() && !startsWith(github.ref, 'refs/tags/v')
         run: |
-          git config user.name "karnmining-ci"
-          git config user.email "karnmining-ci@users.noreply.github.com"
-          git checkout --orphan dist
-          git rm -rf --cached . >/dev/null 2>&1 || true
-          mkdir -p dist
-          cp build/libs/karnmining-*.jar dist/
-          cp src/main/resources/assets/karnmining/icon.png dist/icon.png 2>/dev/null || true
-          git add dist
-          git commit -m "KarnMining build ${{ github.sha }}" || true
-          git push origin HEAD:dist --force
+          {
+            git config user.name "karnmining-ci"
+            git config user.email "karnmining-ci@users.noreply.github.com"
+            git checkout --orphan dist
+            git rm -rf --cached . >/dev/null 2>&1 || true
+            mkdir -p dist
+            cp build/libs/karnmining-*.jar dist/
+            cp src/main/resources/assets/karnmining/icon.png dist/icon.png 2>/dev/null || true
+            git add dist
+            git commit -m "KarnMining build ${{ github.sha }}" || true
+            git push origin HEAD:dist --force
+          } 2>&1 | tee -a "$GITHUB_WORKSPACE/build.log"
+          exit "${PIPESTATUS[0]}"
 
       # On failure the Gradle log is pushed to the ci-logs branch so it can
       # be fetched with a plain git pull.
