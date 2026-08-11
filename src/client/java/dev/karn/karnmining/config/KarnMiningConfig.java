@@ -16,12 +16,21 @@ import java.nio.file.Path;
 import java.nio.file.StandardCopyOption;
 import java.util.Optional;
 
-/** Persistent, intentionally small client configuration. */
+/**
+ * Small, persistent client configuration stored as JSON in the Fabric config
+ * directory ({@code config/karnmining.json}).
+ */
 public final class KarnMiningConfig {
     private static final Gson GSON = new GsonBuilder().setPrettyPrinting().create();
     private static final Path PATH = FabricLoader.getInstance().getConfigDir().resolve("karnmining.json");
 
+    /** Registry id of the block to mine, e.g. {@code minecraft:diamond_ore}. */
     private String selectedBlock;
+
+    /** Whether activation requires Sneak + keybind (true) or keybind only (false). */
+    private boolean requireSneak = true;
+
+    /** Maximum horizontal scan distance (blocks) when looking for the target block. */
     private int searchRadius = 48;
 
     public static KarnMiningConfig load() {
@@ -35,9 +44,6 @@ public final class KarnMiningConfig {
                 return new KarnMiningConfig();
             }
             config.searchRadius = clampRadius(config.searchRadius);
-            if (config.getSelectedBlock().isEmpty()) {
-                config.selectedBlock = null;
-            }
             return config;
         } catch (IOException | JsonParseException exception) {
             System.err.println("[KarnMining] Could not read config: " + exception.getMessage());
@@ -74,12 +80,17 @@ public final class KarnMiningConfig {
         return Registries.BLOCK.getOptionalValue(id);
     }
 
-    public Optional<Identifier> getSelectedBlockId() {
-        return getSelectedBlock().map(Registries.BLOCK::getId);
-    }
-
     public void setSelectedBlock(Identifier id) {
         selectedBlock = id.toString();
+        save();
+    }
+
+    public boolean requiresSneak() {
+        return requireSneak;
+    }
+
+    public void setRequiresSneak(boolean requireSneak) {
+        this.requireSneak = requireSneak;
         save();
     }
 

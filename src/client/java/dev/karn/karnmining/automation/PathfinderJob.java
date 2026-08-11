@@ -16,8 +16,12 @@ import java.util.PriorityQueue;
 import java.util.Set;
 
 /**
- * Tick-budgeted A* pathfinder. It deliberately attempts a no-mining route
- * first; only when that fails does it consider breakable blocks as route cost.
+ * Tick-budgeted A* pathfinder over a bounded 3D box around the player.
+ *
+ * <p>It deliberately attempts a no-mining route first; only when that fails
+ * does it consider breakable blocks as route cost, preferring cheap blocks
+ * (dirt, stone) over expensive ones so KarnMining avoids unnecessary
+ * destruction. The search is spread across ticks through {@link #step}.
  */
 final class PathfinderJob {
     private static final Direction[] HORIZONTAL = {

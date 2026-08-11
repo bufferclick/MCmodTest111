@@ -2,8 +2,18 @@
 
 **Choose it. Find it. Mine it. Repeat.**
 
-KarnMining is a lightweight Fabric mining assistant that tracks down the nearest block you choose, calculates a fast route, sprints there when the way is clear, and mines through obstacles when it is not. Pick any block from the vanilla-style searchable menu, then toggle the miner with **Sneak + L**. KarnMining always uses the tool already in your hand.
+KarnMining is a lightweight Fabric mining assistant for Minecraft 1.21.11
+that finds the nearest block of your chosen type, plans an efficient route to
+it, mines through obstacles only when necessary, and then immediately searches
+for the next target. It uses the tool you are already holding — nothing is
+injected or swapped.
 
-Requires **Fabric API** and **Mod Menu** for Minecraft **1.21.11**.
+Open the vanilla-styled configuration menu with **Crouch + G**, pick any block
+from the searchable registry grid, and toggle the miner with **Sneak + L**
+(rebindable, and switchable to key-only mode). Both keys integrate with the
+vanilla Controls screen. No Mod Menu required.
 
-> ⚠️ **Multiplayer warning:** Automated movement and mining may break a server's rules. You could receive penalties—including a temporary or permanent ban—for using KarnMining on multiplayer servers. Only use it where automation is explicitly allowed.
+> ⚠️ **Multiplayer warning:** Using KarnMining on multiplayer servers may
+> violate server rules and can result in a ban.
+
+Requires Fabric Loader, Fabric API, and Minecraft Java Edition 1.21.11.
